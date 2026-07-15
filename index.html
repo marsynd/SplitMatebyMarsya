@@ -8,7 +8,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<!-- Tambahkan Tesseract.js untuk OCR Gratis & Lokal -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
   :root{
@@ -698,6 +697,7 @@
     };
     reader.readAsDataURL(file);
   });
+  
   function renderPhoto(){
     const wrap = document.getElementById('photoPreviewWrap');
     wrap.innerHTML = '';
@@ -841,8 +841,7 @@
     el.className = 'detect-status' + (type ? ' ' + type : '');
   }
 
-  // --- DETEKSI BARU MEMAKAI TESSERACT.JS (GRATIS & SIMPLE) ---
- async function detectReceipt(){
+  async function detectReceipt(){
     if(!state.photo) return;
     const btn = document.getElementById('btnDetect');
     const originalText = btn.textContent;
@@ -851,7 +850,6 @@
     showDetectStatus('Sedang memproses gambar lewat lokal browser, mohon tunggu...');
 
     try{
-      // Membaca teks dari gambar menggunakan Tesseract
       const result = await Tesseract.recognize(state.photo, 'eng+ind');
       const text = result.data.text;
       
@@ -861,8 +859,6 @@
 
       const lines = text.split('\n');
       let detectedItems = [];
-
-      // Regex filter untuk memisahkan nama item dan nominal harga di ujung kanan
       const itemRegex = /^(.+?)\s+[\.\-\:]?\s*(\d+[\d\.,]*)$/;
 
       lines.forEach(line => {
@@ -872,14 +868,13 @@
         let match = cleanLine.match(itemRegex);
         if(match) {
           let name = match[1].trim();
-          let priceStr = match[2].replace(/[\.,]/g, ''); // Hapus titik/koma ribuan
+          let priceStr = match[2].replace(/[\.,]/g, '');
           let price = parseInt(priceStr);
 
           if(isNaN(price) || price <= 0) return;
 
           let lowerName = name.toLowerCase();
 
-          // Cek & masukkan otomatis ke input field biaya tambahan jika cocok
           if(lowerName.includes('pajak') || lowerName.includes('tax') || lowerName.includes('pb1')) {
             // Passthrough
           } else if(lowerName.includes('diskon') || lowerName.includes('promo') || lowerName.includes('discount') || lowerName.includes('cut')) {
@@ -897,7 +892,6 @@
             document.getElementById('chargeAdmin').value = price;
             state.charges.admin = price;
           } else if(!lowerName.includes('total') && !lowerName.includes('subtotal') && !lowerName.includes('cash') && !lowerName.includes('tunai') && !lowerName.includes('kembali')) {
-            // Jika murni menu makanan/belanjaan biasa
             detectedItems.push({
               id: uid(),
               name: name,
@@ -924,50 +918,48 @@
       btn.textContent = originalText;
     }
   }
-            });
-          }
-        }
-      });
 
-      if(detectedItems.length === 0) {
-        throw new Error('Tidak ada item menu belanja terdeteksi');
-      }
+  function applyDetectedData(parsed){
+    state.items = parsed.items.map(it => {
+      const qty = (it.qty && it.qty > 1) ? Math.round(it.qty) : 1;
+      const baseName = (it.name || 'Item').trim();
+      const name = qty > 1 ? `${baseName} x${qty}` : baseName;
+      return { id: uid(), name, price: Math.round(it.price) || 0, assigned: [] };
+    });
+    renderItems();
 
-      // Masukkan hasil ke state aplikasi
-      state.items = detectedItems;
-      renderItems();
+    const subtotalDetected = state.items.reduce((s, it) => s + (it.price || 0), 0);
 
-      // Masukkan biaya tambahan
-      const subtotalDetected = state.items.reduce((s, it) => s + (it.price || 0), 0);
-      
-      if(taxAmount > 0 && subtotalDetected > 0) {
-        state.charges.tax = Math.round((taxAmount / subtotalDetected) * 100 * 10) / 10;
-        document.getElementById('chargeTax').value = state.charges.tax;
-      }
-      if(discountAmount > 0) {
-        state.charges.discount = discountAmount;
-        state.charges.discountUnit = 'amount';
-        document.getElementById('chargeDiscount').value = discountAmount;
-        document.getElementById('chargeDiscountUnit').value = 'amount';
-      }
-      if(ongkirAmount > 0) {
-        state.charges.ongkir = ongkirAmount;
-        document.getElementById('chargeOngkir').value = ongkirAmount;
-      }
-      if(adminAmount > 0) {
-        state.charges.admin = adminAmount;
-        document.getElementById('chargeAdmin').value = adminAmount;
-      }
-
-      showDetectStatus(`✅ Berhasil mendeteksi ${detectedItems.length} item. Silakan cek kembali nominalnya di bawah.`, 'success');
-
-    } catch(err) {
-      console.error(err);
-      showDetectStatus('⚠️ Tulisan struk kurang jelas terbaca otomatis. Silakan tambah item manual di bawah ya.', 'error');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = originalText;
+    let taxPercent = 0;
+    if(parsed.tax_percent != null){
+      taxPercent = parsed.tax_percent;
+    } else if(parsed.tax_amount != null && subtotalDetected > 0){
+      taxPercent = Math.round((parsed.tax_amount / subtotalDetected) * 1000) / 10;
     }
+    state.charges.tax = taxPercent;
+    document.getElementById('chargeTax').value = taxPercent || '';
+
+    if(parsed.discount_percent != null){
+      state.charges.discount = parsed.discount_percent;
+      state.charges.discountUnit = 'percent';
+    } else if(parsed.discount_amount != null){
+      state.charges.discount = parsed.discount_amount;
+      state.charges.discountUnit = 'amount';
+    } else {
+      state.charges.discount = 0;
+      state.charges.discountUnit = 'percent';
+    }
+    document.getElementById('chargeDiscount').value = state.charges.discount || '';
+    document.getElementById('chargeDiscountUnit').value = state.charges.discountUnit;
+
+    state.charges.ongkir = parsed.ongkir_amount || 0;
+    document.getElementById('chargeOngkir').value = state.charges.ongkir || '';
+
+    state.charges.platform = parsed.platform_fee_amount || 0;
+    document.getElementById('chargePlatform').value = state.charges.platform || '';
+
+    state.charges.admin = (parsed.admin_fee_amount || 0) + (parsed.service_charge_amount || 0);
+    document.getElementById('chargeAdmin').value = state.charges.admin || '';
   }
 
   document.getElementById('btnAddFriend').onclick = ()=>{
