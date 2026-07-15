@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<!-- Tesseract.js untuk OCR Gratis & Lokal -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
   :root{
@@ -481,8 +482,8 @@
           <div class="discount-row">
             <input type="number" id="chargeDiscount" min="0" step="1" placeholder="0" inputmode="decimal">
             <select id="chargeDiscountUnit">
-              <option value="percent">%</option>
               <option value="amount">Rp</option>
+              <option value="percent">%</option>
             </select>
           </div>
         </div>
@@ -495,8 +496,12 @@
           <input type="number" id="chargePlatform" min="0" step="500" placeholder="0" inputmode="decimal">
         </div>
         <div class="field">
-          <label for="chargeAdmin">Biaya admin (Rp)</label>
+          <label for="chargeAdmin">Biaya admin / Toko (Rp)</label>
           <input type="number" id="chargeAdmin" min="0" step="500" placeholder="0" inputmode="decimal">
+        </div>
+        <div class="field">
+          <label for="chargeTip">Tip Driver (Rp)</label>
+          <input type="number" id="chargeTip" min="0" step="500" placeholder="0" inputmode="decimal">
         </div>
         <div class="field split-method">
           <label for="splitMethod">Cara bagi biaya tambahan</label>
@@ -557,7 +562,7 @@
   let state = {
     friends: [],
     items: [],
-    charges: { tax:0, discount:0, discountUnit:'percent', ongkir:0, platform:0, admin:0, splitMethod:'proportional' },
+    charges: { tax:0, discount:0, discountUnit:'amount', ongkir:0, platform:0, admin:0, tip:0, splitMethod:'proportional' },
     photo: null,
   };
   let idCounter = 1;
@@ -749,7 +754,7 @@
       : Math.min(c.discount||0, subtotal);
     const taxableBase = Math.max(subtotal - discountAmount, 0);
     const taxAmount = taxableBase * (c.tax||0)/100;
-    const otherFees = (c.ongkir||0) + (c.platform||0) + (c.admin||0);
+    const otherFees = (c.ongkir||0) + (c.platform||0) + (c.admin||0) + (c.tip||0);
     const grandTotal = taxableBase + taxAmount + otherFees;
 
     const n = state.friends.length;
@@ -802,7 +807,7 @@
         <div class="detail-line"><span>Subtotal item</span><span>${fmtRp(r.subtotal)}</span></div>
         <div class="detail-line"><span>Diskon</span><span>-${fmtRp(r.discount)}</span></div>
         <div class="detail-line"><span>Pajak</span><span>+${fmtRp(r.tax)}</span></div>
-        <div class="detail-line"><span>Ongkir + platform + admin</span><span>+${fmtRp(r.fees)}</span></div>
+        <div class="detail-line"><span>Biaya Lain + Tip</span><span>+${fmtRp(r.fees)}</span></div>
         <div class="detail-line total-line"><span>Total bayar</span><span>${fmtRp(r.total)}</span></div>
       `;
 
@@ -859,11 +864,18 @@
 
       const lines = text.split('\n');
       let detectedItems = [];
-      const itemRegex = /^(.+?)\s+[\.\-\:]?\s*(\d+[\d\.,]*)$/;
+      let accumulatedDiscount = 0;
+
+      // Regex mendeteksi nama barang dan harga di akhir baris
+      const itemRegex = /^(.+?)\s+[\.\-\:\=\_]?\s*(\d+[\d\.,]*)$/;
 
       lines.forEach(line => {
         let cleanLine = line.trim();
-        if(cleanLine.length < 5) return;
+        if(cleanLine.length < 4) return;
+
+        // Cek apakah baris mengandung tanda potongan minus (-)
+        let hasMinusSign = cleanLine.includes('-');
+        let lowerLine = cleanLine.toLowerCase();
 
         let match = cleanLine.match(itemRegex);
         if(match) {
@@ -872,35 +884,55 @@
           let price = parseInt(priceStr);
 
           if(isNaN(price) || price <= 0) return;
-
           let lowerName = name.toLowerCase();
 
-          if(lowerName.includes('pajak') || lowerName.includes('tax') || lowerName.includes('pb1')) {
-            // Passthrough
-          } else if(lowerName.includes('diskon') || lowerName.includes('promo') || lowerName.includes('discount') || lowerName.includes('cut')) {
-            document.getElementById('chargeDiscount').value = price;
-            document.getElementById('chargeDiscountUnit').value = 'amount';
-            state.charges.discount = price;
-            state.charges.discountUnit = 'amount';
-          } else if(lowerName.includes('ongkir') || lowerName.includes('delivery') || lowerName.includes('kirim')) {
+          // POKOKNYA YANG TULISAN MINUS ATAU ADA KATA PROMO/DISKON MAKA AKAN DIHITUNG POTONGAN
+          if(hasMinusSign || lowerName.includes('diskon') || lowerName.includes('promo') || lowerName.includes('discount') || lowerName.includes('off delivery')) {
+            accumulatedDiscount += price;
+          } else if(lowerName.includes('pajak') || lowerName.includes('tax') || lowerName.includes('incl. tax') || lowerName.includes('pb1')) {
+            // Biarkan pajak diisi manual atau dilewati dulu karena struktur dinamis
+          } else if(lowerName.includes('ongkir') || lowerName.includes('delivery fee') || lowerName.includes('kirim')) {
             document.getElementById('chargeOngkir').value = price;
             state.charges.ongkir = price;
           } else if(lowerName.includes('platform')) {
             document.getElementById('chargePlatform').value = price;
             state.charges.platform = price;
-          } else if(lowerName.includes('admin') || lowerName.includes('service') || lowerName.includes('biaya aplikasi')) {
+          } else if(lowerName.includes('restaurant & partner') || lowerName.includes('admin') || lowerName.includes('service') || lowerName.includes('toko')) {
             document.getElementById('chargeAdmin').value = price;
             state.charges.admin = price;
-          } else if(!lowerName.includes('total') && !lowerName.includes('subtotal') && !lowerName.includes('cash') && !lowerName.includes('tunai') && !lowerName.includes('kembali')) {
-            detectedItems.push({
-              id: uid(),
-              name: name,
-              price: price,
-              assigned: []
-            });
+          } else if(lowerName.includes('tip') || lowerName.includes('driver tip')) {
+            document.getElementById('chargeTip').value = price;
+            state.charges.tip = price;
+          } else if(!lowerName.includes('total') && !lowerName.includes('subtotal') && !lowerName.includes('cash') && !lowerName.includes('visa')) {
+            // Saring kuantitas barang jika ada format "2x MIE GACOAN"
+            let qty = 1;
+            let qtyMatch = name.match(/^(\d+)\s*[xX]\s*(.+)$/);
+            if(qtyMatch) {
+              qty = parseInt(qtyMatch[1]) || 1;
+              name = qtyMatch[2].trim();
+            }
+
+            // Jika item tersebut dibeli lebih dari 1x, langsung bagi harganya per item unit agar split-nya akurat
+            let unitPrice = Math.round(price / qty);
+            for(let i=0; i<qty; i++) {
+              detectedItems.push({
+                id: uid(),
+                name: name + (qty > 1 ? ` (${i+1}/${qty})` : ''),
+                price: unitPrice,
+                assigned: []
+              });
+            }
           }
         }
       });
+
+      // Update akumulasi semua diskon/potongan ijo yang terdeteksi
+      if(accumulatedDiscount > 0) {
+        document.getElementById('chargeDiscount').value = accumulatedDiscount;
+        document.getElementById('chargeDiscountUnit').value = 'amount';
+        state.charges.discount = accumulatedDiscount;
+        state.charges.discountUnit = 'amount';
+      }
 
       if(detectedItems.length === 0) {
         throw new Error('Format struk sulit dikenali secara otomatis');
@@ -913,53 +945,10 @@
     } catch(err) {
       console.error(err);
       showDetectStatus('Gagal mendeteksi otomatis: ' + err.message + '. Silakan input manual.', 'error');
-    } finally {
+    } final {
       btn.disabled = false;
       btn.textContent = originalText;
     }
-  }
-
-  function applyDetectedData(parsed){
-    state.items = parsed.items.map(it => {
-      const qty = (it.qty && it.qty > 1) ? Math.round(it.qty) : 1;
-      const baseName = (it.name || 'Item').trim();
-      const name = qty > 1 ? `${baseName} x${qty}` : baseName;
-      return { id: uid(), name, price: Math.round(it.price) || 0, assigned: [] };
-    });
-    renderItems();
-
-    const subtotalDetected = state.items.reduce((s, it) => s + (it.price || 0), 0);
-
-    let taxPercent = 0;
-    if(parsed.tax_percent != null){
-      taxPercent = parsed.tax_percent;
-    } else if(parsed.tax_amount != null && subtotalDetected > 0){
-      taxPercent = Math.round((parsed.tax_amount / subtotalDetected) * 1000) / 10;
-    }
-    state.charges.tax = taxPercent;
-    document.getElementById('chargeTax').value = taxPercent || '';
-
-    if(parsed.discount_percent != null){
-      state.charges.discount = parsed.discount_percent;
-      state.charges.discountUnit = 'percent';
-    } else if(parsed.discount_amount != null){
-      state.charges.discount = parsed.discount_amount;
-      state.charges.discountUnit = 'amount';
-    } else {
-      state.charges.discount = 0;
-      state.charges.discountUnit = 'percent';
-    }
-    document.getElementById('chargeDiscount').value = state.charges.discount || '';
-    document.getElementById('chargeDiscountUnit').value = state.charges.discountUnit;
-
-    state.charges.ongkir = parsed.ongkir_amount || 0;
-    document.getElementById('chargeOngkir').value = state.charges.ongkir || '';
-
-    state.charges.platform = parsed.platform_fee_amount || 0;
-    document.getElementById('chargePlatform').value = state.charges.platform || '';
-
-    state.charges.admin = (parsed.admin_fee_amount || 0) + (parsed.service_charge_amount || 0);
-    document.getElementById('chargeAdmin').value = state.charges.admin || '';
   }
 
   document.getElementById('btnAddFriend').onclick = ()=>{
@@ -978,7 +967,7 @@
     if(e.key==='Enter' || e.key===' '){ e.preventDefault(); document.getElementById('photoInput').click(); }
   });
 
-  ['chargeTax','chargeDiscount','chargeOngkir','chargePlatform','chargeAdmin'].forEach(id=>{
+  ['chargeTax','chargeDiscount','chargeOngkir','chargePlatform','chargeAdmin','chargeTip'].forEach(id=>{
     document.getElementById(id).addEventListener('input', e=>{
       const key = id.replace('charge','').toLowerCase();
       state.charges[key] = parseFloat(e.target.value)||0;
