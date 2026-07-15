@@ -1002,7 +1002,7 @@
     buildExportCard(lastResults);
     const card = document.getElementById('exportCard');
     card.style.left = '0px'; card.style.position='fixed'; card.style.top='-9999px';
-    const canvas = await html2canvas(card, { backgroundColor:#FFFDF8', scale:2 });
+    const canvas = await html2canvas(card, { backgroundColor: '#FFFDF8', scale: 2 });
     card.style.left = '-9999px';
     const link = document.createElement('a');
     link.download = 'splitmate-hasil.jpg';
