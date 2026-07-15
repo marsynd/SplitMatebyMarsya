@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<!-- Tambahkan Tesseract.js untuk OCR Gratis & Lokal -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
   :root{
     --bg-lavender:#EDE7FB;
@@ -92,7 +94,6 @@
     margin:-2px 0 26px;
   }
 
-  /* ---- Receipt card with torn paper edges ---- */
   .receipt{
     position:relative;
     background:var(--paper);
@@ -151,7 +152,6 @@
     margin:0 0 14px;
   }
 
-  /* Upload */
   .upload-box{
     border:2px dashed var(--lavender-deep);
     border-radius:var(--radius-md);
@@ -200,7 +200,6 @@
   .detect-status.success{color:var(--mint-dark); font-weight:600;}
   .detect-status.error{color:var(--coral-dark); font-weight:600;}
 
-  /* Friends */
   .friend-input-row{display:flex; gap:8px; margin-bottom:12px;}
   .friend-input-row input{flex:1;}
   .chip-list{display:flex; flex-wrap:wrap; gap:8px;}
@@ -232,7 +231,6 @@
   .friend-chip button:hover{opacity:1;}
   .empty-note{color:var(--ink-soft); font-size:0.85rem; font-style:italic;}
 
-  /* Inputs general */
   input[type=text], input[type=number], select{
     font-family:'Plus Jakarta Sans', sans-serif;
     font-size:0.92rem;
@@ -271,7 +269,6 @@
   .btn-lg{padding:14px 20px; font-size:1rem;}
   .btn-sm{padding:7px 12px; font-size:0.8rem;}
 
-  /* Items */
   .item-row{
     background:#FBF9F4;
     border:1.5px solid var(--line);
@@ -311,7 +308,6 @@
     border-color:transparent;
   }
 
-  /* Charges grid */
   .charges-grid{
     display:grid;
     grid-template-columns:1fr 1fr;
@@ -324,7 +320,6 @@
   .discount-row select{width:64px; flex-shrink:0; padding-left:6px; padding-right:6px;}
   .split-method{grid-column:1 / -1; margin-top:2px;}
 
-  /* Results */
   .grand-total{
     background:linear-gradient(135deg, rgba(143,227,192,0.35), rgba(154,212,240,0.30));
     border-radius:var(--radius-md);
@@ -442,7 +437,7 @@
 
     <div class="section" id="editSection-photo">
       <h2 class="section-title"><span class="num">1</span>Foto struk</h2>
-      <p class="section-hint">Upload foto struknya — AI bakal otomatis baca item, harga, pajak, sampai diskonnya. Kamu tinggal cek & centang siapa yang pesen apa.</p>
+      <p class="section-hint">Upload foto struknya — Sistem bakal otomatis mendeteksi item dan harga secara gratis tanpa server luar.</p>
       <label class="upload-box" for="photoInput" tabindex="0">
         <input type="file" id="photoInput" accept="image/*">
         <div class="upload-icon">
@@ -452,7 +447,7 @@
       </label>
       <div id="photoPreviewWrap"></div>
       <div id="detectArea" class="hidden">
-        <button class="btn btn-mint btn-block" id="btnDetect">Split</button>
+        <button class="btn btn-mint btn-block" id="btnDetect">Scan & Deteksi Struk</button>
         <p id="detectStatus" class="detect-status"></p>
       </div>
     </div>
@@ -469,7 +464,7 @@
 
     <div class="section" id="editSection-items">
       <h2 class="section-title"><span class="num">3</span>Daftar item</h2>
-      <p class="section-hint">Item otomatis muncul kalau kamu pakai deteksi AI di atas. Tetap bisa ditambah, diedit, atau dihapus manual.</p>
+      <p class="section-hint">Item otomatis muncul kalau kamu pakai deteksi di atas. Tetap bisa ditambah, diedit, atau dihapus manual.</p>
       <div id="itemList"></div>
       <button class="btn btn-outline btn-block" id="btnAddItem">+ Tambah item</button>
     </div>
@@ -538,7 +533,6 @@
   <p class="copyright">© 2026 Marsya. All rights reserved.</p>
 </div>
 
-<!-- Hidden export card used for JPG generation -->
 <div id="exportCard" style="position:fixed; left:-9999px; top:0; width:420px; background:var(--paper); border-radius:16px; padding:26px; font-family:'Plus Jakarta Sans', sans-serif; color:var(--ink);">
   <div style="text-align:center; margin-bottom:16px;">
     <div style="font-family:'Baloo 2',sans-serif; font-weight:800; font-size:1.4rem;">Split<span style="color:#3FA37D;">Mate</span></div>
@@ -562,10 +556,10 @@
   ];
 
   let state = {
-    friends: [],   // {id, name, colorIdx}
-    items: [],     // {id, name, price, assigned: [friendId,...]}
+    friends: [],
+    items: [],
     charges: { tax:0, discount:0, discountUnit:'percent', ongkir:0, platform:0, admin:0, splitMethod:'proportional' },
-    photo: null,   // dataURL, not included in share link
+    photo: null,
   };
   let idCounter = 1;
   let lastResults = null;
@@ -581,7 +575,6 @@
     return 'Rp ' + n.toLocaleString('id-ID');
   }
 
-  // ---------- Friends ----------
   function addFriend(name){
     name = name.trim();
     if(!name) return;
@@ -618,7 +611,6 @@
     });
   }
 
-  // ---------- Items ----------
   function addItem(){
     state.items.push({ id: uid(), name:'', price:0, assigned: [] });
     renderItems();
@@ -696,7 +688,6 @@
     });
   }
 
-  // ---------- Photo ----------
   document.getElementById('photoInput').addEventListener('change', function(e){
     const file = e.target.files[0];
     if(!file) return;
@@ -737,7 +728,6 @@
     }
   }
 
-  // ---------- Calculation ----------
   function calculate(){
     const c = state.charges;
     const subtotal = state.items.reduce((s,it)=> s + (it.price||0), 0);
@@ -845,135 +835,118 @@
     body.innerHTML = html;
   }
 
-  // ---------- AI auto-detect from receipt photo ----------
   function showDetectStatus(msg, type){
     const el = document.getElementById('detectStatus');
     el.textContent = msg;
     el.className = 'detect-status' + (type ? ' ' + type : '');
   }
 
+  // --- DETEKSI BARU MEMAKAI TESSERACT.JS (GRATIS & SIMPLE) ---
   async function detectReceipt(){
     if(!state.photo) return;
     const btn = document.getElementById('btnDetect');
     const originalText = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Membaca struk...';
-    showDetectStatus('Lagi baca foto struk kamu, tunggu sebentar ya...');
+    showDetectStatus('Sedang memproses gambar lewat lokal browser, mohon tunggu...');
 
     try{
-      const match = state.photo.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/);
-      if(!match) throw new Error('invalid_image');
-      const mediaType = match[1];
-      const base64Data = match[2];
-
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system: "You read Indonesian and English restaurant/store receipts from photos and extract structured data. Respond with ONLY a raw JSON object — no markdown code fences, no preamble, no explanation, no trailing text. All monetary values must be plain integers in Indonesian Rupiah with no currency symbol and no thousand separators (e.g. 25000, not \"Rp25.000\"). Use exactly this schema: {\"items\":[{\"name\":string,\"qty\":number,\"price\":number}],\"tax_percent\":number|null,\"tax_amount\":number|null,\"discount_percent\":number|null,\"discount_amount\":number|null,\"service_charge_amount\":number|null,\"ongkir_amount\":number|null,\"platform_fee_amount\":number|null,\"admin_fee_amount\":number|null}. For each item, \"price\" is the TOTAL line price (unit price already multiplied by qty), not the unit price. Use null for any field not present on the receipt. If the image is unreadable or is not a receipt, respond with {\"items\":[],\"error\":\"unreadable\"}.",
-          messages: [
-            { role: "user", content: [
-              { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } },
-              { type: "text", text: "Extract every item (name, quantity, total line price) plus tax, discount, service charge, delivery fee, platform fee and admin fee from this receipt." }
-            ]}
-          ]
-        })
-      });
-
-      if(!response.ok) throw new Error('api_error_' + response.status);
-      const data = await response.json();
-      const textBlock = (data.content || []).find(b => b.type === 'text');
-      if(!textBlock) throw new Error('no_text_block');
-
-      let clean = textBlock.text.trim();
-      clean = clean.replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
-      const parsed = JSON.parse(clean);
-
-      if(parsed.error || !Array.isArray(parsed.items) || parsed.items.length === 0){
-        throw new Error('unreadable');
+      // Membaca teks dari gambar
+      const result = await Tesseract.recognize(state.photo, 'eng+ind');
+      const text = result.data.text;
+      
+      if(!text || text.trim().length === 0) {
+        throw new Error('Teks tidak terdeteksi');
       }
 
-      applyDetectedData(parsed);
-      showDetectStatus(`✅ ${parsed.items.length} item terdeteksi. Cek lagi ya, siapa tau ada yang meleset — lalu centang siapa yang pesen apa.`, 'success');
-    }catch(err){
-      console.error('detectReceipt error:', err);
-      showDetectStatus('⚠️ Belum berhasil baca struk ini otomatis. Coba foto yang lebih jelas/terang, atau isi item manual di bawah ya.', 'error');
-    }finally{
+      const lines = text.split('\n');
+      let detectedItems = [];
+      let taxAmount = 0;
+      let discountAmount = 0;
+      let ongkirAmount = 0;
+      let adminAmount = 0;
+
+      // Regex filter untuk menangkap nama menu dan harga angka belakangnya
+      // Pola: (Nama Menu/Item) (spasi/titik/simbol) (Angka Harga Akhir)
+      const itemRegex = /^(.+?)\s+[\.\-\:]?\s*(\d+[\d\.,]*)$/;
+
+      lines.forEach(line => {
+        let cleanLine = line.trim();
+        if(cleanLine.length < 5) return;
+
+        // Bersihkan tanda titik pemisah ribuan agar mudah dibaca sebagai angka dasar
+        let match = cleanLine.match(itemRegex);
+        if(match) {
+          let name = match[1].trim();
+          let priceStr = match[2].replace(/[\.,]/g, ''); // Hapus titik/koma ribuan
+          let price = parseInt(priceStr);
+
+          if(isNaN(price) || price <= 0) return;
+
+          let lowerName = name.toLowerCase();
+
+          // Pisahkan biaya-biaya sampingan berdasarkan kata kunci teks struk Indonesia
+          if(lowerName.includes('pajak') || lowerName.includes('tax') || lowerName.includes('pb1')) {
+            taxAmount = price;
+          } else if(lowerName.includes('diskon') || lowerName.includes('promo') || lowerName.includes('discount') || lowerName.includes('cut')) {
+            discountAmount = price;
+          } else if(lowerName.includes('ongkir') || lowerName.includes('delivery') || lowerName.includes('kirim')) {
+            ongkirAmount = price;
+          } else if(lowerName.includes('admin') || lowerName.includes('service') || lowerName.includes('biaya aplikasi')) {
+            adminAmount = price;
+          } else if(!lowerName.includes('total') && !lowerName.includes('subtotal') && !lowerName.includes('cash') && !lowerName.includes('tunai') && !lowerName.includes('kembali')) {
+            // Masuk sebagai menu makanan/belanja biasa
+            detectedItems.push({
+              id: uid(),
+              name: name,
+              price: price,
+              assigned: []
+            });
+          }
+        }
+      });
+
+      if(detectedItems.length === 0) {
+        throw new Error('Tidak ada item menu belanja terdeteksi');
+      }
+
+      // Masukkan hasil ke state aplikasi
+      state.items = detectedItems;
+      renderItems();
+
+      // Masukkan biaya tambahan
+      const subtotalDetected = state.items.reduce((s, it) => s + (it.price || 0), 0);
+      
+      if(taxAmount > 0 && subtotalDetected > 0) {
+        state.charges.tax = Math.round((taxAmount / subtotalDetected) * 100 * 10) / 10;
+        document.getElementById('chargeTax').value = state.charges.tax;
+      }
+      if(discountAmount > 0) {
+        state.charges.discount = discountAmount;
+        state.charges.discountUnit = 'amount';
+        document.getElementById('chargeDiscount').value = discountAmount;
+        document.getElementById('chargeDiscountUnit').value = 'amount';
+      }
+      if(ongkirAmount > 0) {
+        state.charges.ongkir = ongkirAmount;
+        document.getElementById('chargeOngkir').value = ongkirAmount;
+      }
+      if(adminAmount > 0) {
+        state.charges.admin = adminAmount;
+        document.getElementById('chargeAdmin').value = adminAmount;
+      }
+
+      showDetectStatus(`✅ Berhasil mendeteksi ${detectedItems.length} item. Silakan cek kembali nominalnya di bawah.`, 'success');
+
+    } catch(err) {
+      console.error(err);
+      showDetectStatus('⚠️ Tulisan struk kurang jelas terbaca otomatis. Silakan tambah item manual di bawah ya.', 'error');
+    } finally {
       btn.disabled = false;
       btn.textContent = originalText;
     }
   }
 
-  function applyDetectedData(parsed){
-    state.items = parsed.items.map(it => {
-      const qty = (it.qty && it.qty > 1) ? Math.round(it.qty) : 1;
-      const baseName = (it.name || 'Item').trim();
-      const name = qty > 1 ? `${baseName} x${qty}` : baseName;
-      return { id: uid(), name, price: Math.round(it.price) || 0, assigned: [] };
-    });
-    renderItems();
-
-    const subtotalDetected = state.items.reduce((s, it) => s + (it.price || 0), 0);
-
-    let taxPercent = 0;
-    if(parsed.tax_percent != null){
-      taxPercent = parsed.tax_percent;
-    } else if(parsed.tax_amount != null && subtotalDetected > 0){
-      taxPercent = Math.round((parsed.tax_amount / subtotalDetected) * 1000) / 10;
-    }
-    state.charges.tax = taxPercent;
-    document.getElementById('chargeTax').value = taxPercent || '';
-
-    if(parsed.discount_percent != null){
-      state.charges.discount = parsed.discount_percent;
-      state.charges.discountUnit = 'percent';
-    } else if(parsed.discount_amount != null){
-      state.charges.discount = parsed.discount_amount;
-      state.charges.discountUnit = 'amount';
-    } else {
-      state.charges.discount = 0;
-      state.charges.discountUnit = 'percent';
-    }
-    document.getElementById('chargeDiscount').value = state.charges.discount || '';
-    document.getElementById('chargeDiscountUnit').value = state.charges.discountUnit;
-
-    state.charges.ongkir = parsed.ongkir_amount || 0;
-    document.getElementById('chargeOngkir').value = state.charges.ongkir || '';
-
-    state.charges.platform = parsed.platform_fee_amount || 0;
-    document.getElementById('chargePlatform').value = state.charges.platform || '';
-
-    state.charges.admin = (parsed.admin_fee_amount || 0) + (parsed.service_charge_amount || 0);
-    document.getElementById('chargeAdmin').value = state.charges.admin || '';
-  }
-
-  // ---------- Share via link ----------
-  function encodeState(){
-    const payload = {
-      friends: state.friends,
-      items: state.items,
-      charges: state.charges,
-      results: lastResults,
-    };
-    const json = JSON.stringify(payload);
-    return btoa(unescape(encodeURIComponent(json)));
-  }
-  function decodeState(hash){
-    try{
-      const json = decodeURIComponent(escape(atob(hash)));
-      return JSON.parse(json);
-    }catch(e){ return null; }
-  }
-
-  function escapeHtml(str){
-    const d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-  }
-
-  // ---------- Wire up events ----------
   document.getElementById('btnAddFriend').onclick = ()=>{
     const input = document.getElementById('friendNameInput');
     addFriend(input.value);
@@ -1029,7 +1002,7 @@
     buildExportCard(lastResults);
     const card = document.getElementById('exportCard');
     card.style.left = '0px'; card.style.position='fixed'; card.style.top='-9999px';
-    const canvas = await html2canvas(card, { backgroundColor:'#FFFDF8', scale:2 });
+    const canvas = await html2canvas(card, { backgroundColor:#FFFDF8', scale:2 });
     card.style.left = '-9999px';
     const link = document.createElement('a');
     link.download = 'splitmate-hasil.jpg';
@@ -1042,7 +1015,6 @@
     window.location.reload();
   };
 
-  // ---------- View mode (opened from a shared link) ----------
   function enterViewMode(data){
     viewMode = true;
     state.friends = data.friends || [];
@@ -1061,6 +1033,17 @@
     renderResults(res);
   }
 
+  function encodeState(){
+    const payload = { friends: state.friends, items: state.items, charges: state.charges, results: lastResults };
+    return btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  }
+  function decodeState(hash){
+    try{ return JSON.parse(decodeURIComponent(escape(atob(hash)))); }catch(e){ return null; }
+  }
+  function escapeHtml(str){
+    const d = document.createElement('div'); d.textContent = str; return d.innerHTML;
+  }
+
   renderFriends();
   renderItems();
   if(window.location.hash.startsWith('#data=')){
@@ -1069,6 +1052,5 @@
   }
 })();
 </script>
-
 </body>
 </html>
